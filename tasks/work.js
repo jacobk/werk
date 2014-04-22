@@ -171,17 +171,16 @@ module.exports = function(grunt) {
           isRepoDirty: isRepoDirty(),
           currentBranch: currentBranch()
         }).then(function(results) {
+          var pullRequest = {
+            tasks: []
+          };
+          var prompts = RSVP.resolve();
           if (results.isRepoDirty && !grunt.option('yolo')) {
             return def.reject({
               reason: 'You have staged/pending/uncommited changes.',
               help: 'Please commit or stash any outstanding changes ' +
                     'before running work.'
             });
-          }
-          if (results.currentBranch.isNotDefaultBranch) {
-            grunt.log.warn('Not on default branch! (' +
-              results.currentBranch.name + ' !== ' + defaultBranch + ')');
-
           }
 
           grunt.log.writelns(
@@ -190,34 +189,33 @@ module.exports = function(grunt) {
             'You will be given the option to edit all of the following ' +
             'responses manually before submitting the PR');
 
-          grunt.log.subhead('Please answer the following:');
 
-          var pullRequest = {
-            tasks: []
-          };
+          if (results.currentBranch.isNotDefaultBranch) {
+            grunt.log.warn('Not on default branch! (' +
+              results.currentBranch.name + ' !== ' + defaultBranch + ')');
+            prompts = promptPromise([{
+              name: 'stay',
+              description: 'Use this branch',
+              default: 'y/N',
+              pattern: /^(y(es)?|no?|y\/n)$/i,
+              message: 'Please answer y or n',
+              required: true,
+              before: function(value) {
+                return value === 'y/N' ? 'n' : value;
+              }
+            }]).then(function(answers) {
+              if (/^n/.test(answers.stay)) {
+                grunt.log.ok('Switching to default branch: (' + defaultBranch + ')');
+                return execPromise('git checkout ' + defaultBranch);
+              } else {
+                return true;
+              }
+            });
+          }
 
           var emptyHandler = function(value) {
             return value !== 'empty' ? value : '';
           };
-
-          var prompts = promptPromise([{
-            name: 'title',
-            description: 'Pull Request Title',
-            type: 'string',
-            required: true
-          }, {
-            name: 'body',
-            description: 'Why is this work needed?',
-            type: 'string',
-            default: 'empty',
-            before: emptyHandler
-          }]);
-
-          prompts = prompts.then(function(answers) {
-            pullRequest.title = answers.title;
-            pullRequest.body = answers.body;
-            return true;
-          });
 
           var addTask = function() {
             return new RSVP.Promise(function(resolve, reject) {
@@ -242,6 +240,27 @@ module.exports = function(grunt) {
               });
             });
           };
+
+          prompts = prompts.then(function() {
+            grunt.log.subhead('Please answer the following:');
+
+            return promptPromise([{
+              name: 'title',
+              description: 'Pull Request Title',
+              type: 'string',
+              required: true
+            }, {
+              name: 'body',
+              description: 'Why is this work needed?',
+              type: 'string',
+              default: 'empty',
+              before: emptyHandler
+            }]).then(function(answers) {
+              pullRequest.title = answers.title;
+              pullRequest.body = answers.body;
+              return true;
+            });
+          });
 
           prompts = prompts.then(function() {
             grunt.log.subhead('Please add tasks');
