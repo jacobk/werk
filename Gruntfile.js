@@ -30,29 +30,14 @@ module.exports = function(grunt) {
 
     // Configuration to be run (and then tested).
     work: {
-      default_options: {
-        options: {
-        },
-        files: {
-          'tmp/default_options': ['test/fixtures/testing', 'test/fixtures/123'],
-        },
-      },
-      custom_options: {
-        options: {
-          separator: ': ',
-          punctuation: ' !!!',
-        },
-        files: {
-          'tmp/custom_options': ['test/fixtures/testing', 'test/fixtures/123'],
-        },
-      },
+      github_config: '.work',
+      default_branch: 'development'
     },
 
     // Unit tests.
     nodeunit: {
       tests: ['test/*_test.js'],
-    },
-
+    }
   });
 
   // Actually load this plugin's task(s).

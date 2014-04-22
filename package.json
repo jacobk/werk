@@ -37,5 +37,12 @@
   },
   "keywords": [
     "gruntplugin"
-  ]
+  ],
+  "dependencies": {
+    "prompt": "^0.2.12",
+    "lodash": "^2.4.1",
+    "github": "^0.1.16",
+    "rsvp": "^3.0.6",
+    "moment": "^2.6.0"
+  }
 }

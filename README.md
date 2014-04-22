@@ -1,12 +1,15 @@
 # TODO
 
-- [ ] work:new (new PR)
-- [ ] work:add (add task)
-- [ ] work:status (show tasks with done/not done)
-- [ ] work:team (who short status for all open PRs)
-- [ ] work:comment (add comment to current PR)
-- [ ] Find tasks before committing
-- [ ] PR KPI (detect if not enough activity, commits, comments, etc)
+* work:new (new PR)
+* work:add (add task)
+* work:status (show tasks with done/not done)
+* work:team (who short status for all open PRs)
+* work:comment (add comment to current PR)
+
+## Ideas
+
+* Find tasks before committing
+* PR KPI (detect if not enough activity, commits, comments, etc)
 
 ##  Resources
 
