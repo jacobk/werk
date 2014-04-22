@@ -31,7 +31,7 @@ module.exports = function(grunt) {
     // Configuration to be run (and then tested).
     work: {
       github_config: '.work',
-      default_branch: 'development'
+      default_branch: 'master'
     },
 
     // Unit tests.

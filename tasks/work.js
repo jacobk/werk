@@ -44,6 +44,7 @@ module.exports = function(grunt) {
           timeout: 5000
         }),
         configFile = grunt.config('work.github_config'),
+        defaultBranch = grunt.config('work.default_branch'),
         taskDone = this.async(),
         config,
         child;
@@ -107,7 +108,7 @@ module.exports = function(grunt) {
 
     var ensureGithubAuth = function() {
       if (hasCredentials()) {
-        grunt.log.writeln('Authenticated with GitHub as \'' +
+        grunt.verbose.ok('Authenticated with GitHub as \'' +
                           config.github_user + '\'');
         return RSVP.resolve();
       } else {
@@ -145,33 +146,138 @@ module.exports = function(grunt) {
         var cmds = ['git diff-index --quiet --cached HEAD',
                     'git diff-files --quiet'];
         execPromise(cmds.join(' && ')).then(function(result) {
-          console.log(JSON.stringify(result));
-          resolve(result.exitCode === 0);
+          resolve(result.exitCode !== 0);
+        });
+      });
+    };
+
+    var currentBranch = function() {
+      var branchName;
+      return new RSVP.Promise(function(resolve, reject) {
+        execPromise('git rev-parse --abbrev-ref HEAD').then(function(result) {
+          branchName = result.stdout.trim();
+          resolve({
+            name: branchName,
+            isNotDefaultBranch: branchName !== defaultBranch
+          });
         });
       });
     };
 
     var tasks = {
       'new': function() {
-        isRepoDirty();
+        var def = RSVP.defer();
+        RSVP.hash({
+          isRepoDirty: isRepoDirty(),
+          currentBranch: currentBranch()
+        }).then(function(results) {
+          if (results.isRepoDirty && !grunt.option('yolo')) {
+            return def.reject({
+              reason: 'You have staged/pending/uncommited changes.',
+              help: 'Please commit or stash any outstanding changes ' +
+                    'before running work.'
+            });
+          }
+          if (results.currentBranch.isNotDefaultBranch) {
+            grunt.log.warn('Not on default branch! (' +
+              results.currentBranch.name + ' !== ' + defaultBranch + ')');
 
-        grunt.log.writelns(
-          'This task will create a new branch and open a pull request on GitHub'
-        );
+          }
 
-        grunt.log.subhead('Please answer the following:');
+          grunt.log.writelns(
+            'This task will create a new branch (if needed) and open a pull ' +
+            'request on GitHub. \n\n' +
+            'You will be given the option to edit all of the following ' +
+            'responses manually before submitting the PR');
 
-        var titlePromise = promptPromise([{
-          name: 'title',
-          description: 'Pull Request Title',
-          type: 'string',
-          required: true
-        }]);
+          grunt.log.subhead('Please answer the following:');
 
-        titlePromise.then(function(answers) {
-          grunt.log.writeln(JSON.stringify(answers));
+          var pullRequest = {
+            tasks: []
+          };
+
+          var emptyHandler = function(value) {
+            return value !== 'empty' ? value : '';
+          };
+
+          var prompts = promptPromise([{
+            name: 'title',
+            description: 'Pull Request Title',
+            type: 'string',
+            required: true
+          }, {
+            name: 'body',
+            description: 'Why is this work needed?',
+            type: 'string',
+            default: 'empty',
+            before: emptyHandler
+          }]);
+
+          prompts = prompts.then(function(answers) {
+            pullRequest.title = answers.title;
+            pullRequest.body = answers.body;
+            return true;
+          });
+
+          var addTask = function() {
+            return new RSVP.Promise(function(resolve, reject) {
+              promptPromise([{
+                name: 'task',
+                description: 'Task',
+                required: true,
+                default: 'empty',
+                before: emptyHandler
+              }]).then(function(answers) {
+                if (_.isEmpty(answers.task)) {
+                  resolve();
+                } else {
+                  grunt.log.ok();
+                  pullRequest.tasks.push(answers.task);
+                  addTask().then(function() {
+                    resolve();
+                  });
+                }
+              }).catch(function(reason) {
+                reject(reason);
+              });
+            });
+          };
+
+          prompts = prompts.then(function() {
+            grunt.log.subhead('Please add tasks');
+            grunt.log.writelns('Add tasks to make it easy to track any ' +
+                               'outstanding work for this feature');
+            grunt.log.writelns('Give an empty response to indicate no more ' +
+                               'tasks');
+            return addTask().then(function() {
+              grunt.log.ok('Added tasks');
+            }).catch(function(reason) {
+              grunt.log.error(reason);
+            });
+          });
+
+          prompts = prompts.then(function() {
+            grunt.log.subhead('Pull request preview');
+
+            grunt.log.writeln(pullRequest.title);
+            if (!_.isEmpty(pullRequest.body)) {
+              grunt.log.writeln();
+              grunt.log.writeln(grunt.log.wraptext(79, pullRequest.body));
+            }
+            if (!_.isEmpty(pullRequest.tasks)) {
+              grunt.log.writeln();
+              _.each(pullRequest.tasks, function(task) {
+                grunt.log.writeln('- [ ] ' + task);
+              });
+            }
+          });
+
+          prompts.then(function() {
+            def.resolve();
+          });
         });
 
+        return def.promise;
       },
 
       add: function() {
@@ -187,91 +293,20 @@ module.exports = function(grunt) {
 
     if (_.isUndefined(task)) {
       grunt.log.error('Unknown task: \'' + taskName + '\'' );
-      taskDone();
-      return;
+      return taskDone(false);
     }
 
     ensureGithubAuth().then(_.bind(function() {
-      task.apply(this);
+      return task.apply(this).then(function() {
+        taskDone();
+      });
     }, this)).catch(function(reason) {
-      grunt.log.error('No work for u: ' + reason);
-      taskDone();
+      grunt.log.error(reason.reason);
+      if (!_.isUndefined(reason.help)) {
+        grunt.log.writeln(reason.help);
+      }
+      return taskDone(false);
     });
-
-
-
-
-
-
-
-    // taskDone();
-    // // FIXME Remove this stuff
-    // var options = this.options({
-    //   punctuation: '.',
-    //   separator: ', '
-    // });
-
-
-    // var schema = {
-    //     properties: {
-    //       name: {
-    //         description: 'Enter your name',
-    //         pattern: /^[a-zA-Z\s\-]+$/,
-    //         message: 'Name must be only letters, spaces, or dashes',
-    //         required: true
-    //       },
-    //       password: {
-    //         hidden: true
-    //       }
-    //     }
-    //   };
-
-    // // TODO Find out how to add more tasks incrementally
-
-
-    // //
-    // // Start the prompt
-    // //
-    // prompt.start();
-
-    // //
-    // // Get two properties from the user: email, password
-    // //
-    // prompt.get(schema, function (err, result) {
-    //   //
-    //   // Log the results.
-    //   //
-    //   console.log('Command-line input received:');
-    //   console.log('  name: ' + result.name);
-    //   console.log('  password: ' + result.password);
-    //   taskDone();
-    // });
-
-    // Iterate over all specified file groups.
-    // this.files.forEach(function(f) {
-    //   // Concat specified files.
-    //   var src = f.src.filter(function(filepath) {
-    //     // Warn on and remove invalid source files (if nonull was set).
-    //     if (!grunt.file.exists(filepath)) {
-    //       grunt.log.warn('Source file "' + filepath + '" not found.');
-    //       return false;
-    //     } else {
-    //       return true;
-    //     }
-    //   }).map(function(filepath) {
-    //     // Read file source.
-    //     return grunt.file.read(filepath);
-    //   }).join(grunt.util.normalizelf(options.separator));
-
-    //   // Handle options.
-    //   src += options.punctuation;
-
-    //   // Write the destination file.
-    //   grunt.file.write(f.dest, src);
-
-    //   // Print a success message.
-    //   grunt.log.writeln('File "' + f.dest + '" created.');
-    // });
   });
 
 };
