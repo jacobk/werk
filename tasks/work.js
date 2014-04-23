@@ -8,20 +8,18 @@
 
 'use strict';
 
-var prompt = require('prompt'),
-    _ = require('lodash'),
-    GitHubApi = require("github"),
-    RSVP = require('rsvp'),
-    moment = require('moment'),
-    exec = require('child_process').exec;
-
-prompt.message = '[' + '?'.green + ']';
-prompt.delimiter = ' ';
-
 module.exports = function(grunt) {
 
+  var _ = require('lodash'),
+      RSVP = require('rsvp'),
+      moment = require('moment'),
+      github = require('./lib/github').init(grunt),
+      git = require('./lib/git').init(grunt),
+      prompt = require('./lib/prompt').init(grunt),
+      shell = require('./lib/shell').init(grunt);
+
+
   grunt.registerTask('work', 'Gotta pay your bills', function(taskName) {
-    // Merge task-specific and/or target-specific options with these defaults.
     // * work:new (new PR)
     // * work:add (add task)
     // * work:status (show tasks with done/not done)
@@ -35,146 +33,20 @@ module.exports = function(grunt) {
       return;
     }
 
-    var github = new GitHubApi({
-          // required
-          version: "3.0.0",
-          // optional
-          debug: true,
-          protocol: "https",
-          timeout: 5000
-        }),
-        configFile = grunt.config('work.github_config'),
-        defaultBranch = grunt.config('work.default_branch'),
-        taskDone = this.async(),
-        config,
-        child;
+    var taskDone = this.async(),
+        tasks, task;
 
-    if (grunt.file.exists(configFile)) {
-      config = grunt.file.readJSON(configFile);
-    } else {
-      config = {
-        github_user: null,
-        github_token: null
-      };
-      grunt.file.write(configFile, JSON.stringify(config));
-    }
-
-    var hasCredentials = function() {
-      return config.github_token && config.github_user;
-    };
-
-    var createGithubAuth = function() {
-      grunt.log.subhead('You need to authenticate with GitHub');
-      grunt.log.writelns('An access token will be created and stored in ' +
-        configFile
-      );
-
-      var def = RSVP.defer();
-
-      prompt.start();
-
-      prompt.get([{
-        name: 'user',
-        required: true,
-        description: 'Enter your GitHub user'
-      }, {
-        name: 'password',
-        hidden: true,
-        description: 'Enter your GitHub password',
-      }], function(err, answers) {
-        github.authenticate({
-          type: 'basic',
-          username: answers.user,
-          password: answers.password
-        });
-        github.authorization.create({
-            scopes: ['repo'],
-            note: 'grunt-work (' + moment().format('MMMM Do YYYY, h:mm:ss a') + ')',
-            note_url: "https://github.com/jacobk/grunt-work"
-        }, function(err, res) {
-            if (!err && res.token) {
-                config.github_user = answers.user;
-                config.github_token = res.token;
-                grunt.file.write(configFile, JSON.stringify(config));
-                def.resolve(true);
-            } else {
-              def.reject();
-            }
-        });
-      });
-
-      return def.promise;
-    };
-
-    var ensureGithubAuth = function() {
-      if (hasCredentials()) {
-        grunt.verbose.ok('Authenticated with GitHub as \'' +
-                          config.github_user + '\'');
-        return RSVP.resolve();
-      } else {
-        return createGithubAuth();
-      }
-    };
-
-    var promptPromise = function(properties) {
-      return new RSVP.Promise(function(resolve, reject) {
-        prompt.start();
-        prompt.get(properties, function(err, answers) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(answers);
-          }
-        });
-      });
-    };
-
-    var execPromise = function(cmd) {
-      return new RSVP.Promise(function(resolve, reject) {
-        exec(cmd, function(error, stdout, stderr) {
-          resolve({
-            exitCode: _.isNull(error) ? 0 : error.code,
-            stdout: stdout,
-            stderr: stderr
-          });
-        });
-      });
-    };
-
-    var isRepoDirty = function() {
-      return new RSVP.Promise(function(resolve, reject) {
-        var cmds = ['git diff-index --quiet --cached HEAD',
-                    'git diff-files --quiet'];
-        execPromise(cmds.join(' && ')).then(function(result) {
-          resolve(result.exitCode !== 0);
-        });
-      });
-    };
-
-    var currentBranch = function() {
-      var branchName;
-      return new RSVP.Promise(function(resolve, reject) {
-        execPromise('git rev-parse --abbrev-ref HEAD').then(function(result) {
-          branchName = result.stdout.trim();
-          resolve({
-            name: branchName,
-            isNotDefaultBranch: branchName !== defaultBranch
-          });
-        });
-      });
-    };
-
-    var tasks = {
+    tasks = {
       'new': function() {
         var def = RSVP.defer();
         RSVP.hash({
-          isRepoDirty: isRepoDirty(),
-          currentBranch: currentBranch()
+          isRepoDirty: git.isRepoDirty(),
+          currentBranch: git.currentBranch()
         }).then(function(results) {
           var pullRequest = {
             tasks: []
           };
-          var prompts = RSVP.resolve();
+          var chain = RSVP.resolve();
           if (results.isRepoDirty && !grunt.option('yolo')) {
             return def.reject({
               reason: 'You have staged/pending/uncommited changes.',
@@ -191,9 +63,9 @@ module.exports = function(grunt) {
 
 
           if (results.currentBranch.isNotDefaultBranch) {
-            grunt.log.warn('Not on default branch! (' +
-              results.currentBranch.name + ' !== ' + defaultBranch + ')');
-            prompts = promptPromise([{
+            grunt.log.subhead('Not on default branch! (' +
+              results.currentBranch.name + ' !== ' + git.defaultBranch + ')');
+            chain = prompt.get([{
               name: 'stay',
               description: 'Use this branch',
               default: 'y/N',
@@ -205,8 +77,8 @@ module.exports = function(grunt) {
               }
             }]).then(function(answers) {
               if (/^n/.test(answers.stay)) {
-                grunt.log.ok('Switching to default branch: (' + defaultBranch + ')');
-                return execPromise('git checkout ' + defaultBranch);
+                grunt.log.ok('Switching to default branch: (' + git.defaultBranch + ')');
+                return shell.exec('git checkout ' + git.defaultBranch);
               } else {
                 return true;
               }
@@ -219,7 +91,7 @@ module.exports = function(grunt) {
 
           var addTask = function() {
             return new RSVP.Promise(function(resolve, reject) {
-              promptPromise([{
+              prompt.get([{
                 name: 'task',
                 description: 'Task',
                 required: true,
@@ -241,10 +113,10 @@ module.exports = function(grunt) {
             });
           };
 
-          prompts = prompts.then(function() {
+          chain = chain.then(function() {
             grunt.log.subhead('Please answer the following:');
 
-            return promptPromise([{
+            return prompt.get([{
               name: 'title',
               description: 'Pull Request Title',
               type: 'string',
@@ -262,7 +134,7 @@ module.exports = function(grunt) {
             });
           });
 
-          prompts = prompts.then(function() {
+          chain = chain.then(function() {
             grunt.log.subhead('Please add tasks');
             grunt.log.writelns('Add tasks to make it easy to track any ' +
                                'outstanding work for this feature');
@@ -275,7 +147,7 @@ module.exports = function(grunt) {
             });
           });
 
-          prompts = prompts.then(function() {
+          chain = chain.then(function() {
             grunt.log.subhead('Pull request preview');
 
             grunt.log.writeln(pullRequest.title);
@@ -291,7 +163,7 @@ module.exports = function(grunt) {
             }
           });
 
-          prompts.then(function() {
+          chain.then(function() {
             def.resolve();
           });
         });
@@ -308,14 +180,14 @@ module.exports = function(grunt) {
       }
     };
 
-    var task = tasks[taskName.toLowerCase()];
+    task = tasks[taskName.toLowerCase()];
 
     if (_.isUndefined(task)) {
       grunt.log.error('Unknown task: \'' + taskName + '\'' );
       return taskDone(false);
     }
 
-    ensureGithubAuth().then(_.bind(function() {
+    github.withGitHubAuth().then(_.bind(function() {
       return task.apply(this).then(function() {
         taskDone();
       });
