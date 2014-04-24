@@ -15,7 +15,8 @@ exports.init = function(grunt) {
         resolve({
           exitCode: _.isNull(error) ? 0 : error.code,
           stdout: stdout,
-          stderr: stderr
+          stderr: stderr,
+          error: error
         });
       });
     });

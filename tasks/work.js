@@ -20,12 +20,6 @@ module.exports = function(grunt) {
 
 
   grunt.registerTask('work', 'Gotta pay your bills', function(taskName) {
-    // * work:new (new PR)
-    // * work:add (add task)
-    // * work:status (show tasks with done/not done)
-    // * work:team (who short status for all open PRs)
-    // * work:comment (add comment to current PR)
-
     if (arguments.length === 0) {
       grunt.log.writelns(
         'This task will create a new branch and open a pull request on GitHub'
@@ -37,18 +31,14 @@ module.exports = function(grunt) {
         tasks, task;
 
     tasks = {
-      'new': function() {
-        var def = RSVP.defer();
-        RSVP.hash({
-          isRepoDirty: git.isRepoDirty(),
-          currentBranch: git.currentBranch()
-        }).then(function(results) {
+      'new': function(repoInfo) {
+        return new RSVP.Promise(function(resolve, reject) {
           var pullRequest = {
             tasks: []
           };
           var chain = RSVP.resolve();
-          if (results.isRepoDirty && !grunt.option('yolo')) {
-            return def.reject({
+          if (repoInfo.isDirty && !grunt.option('yolo')) {
+            return reject({
               reason: 'You have staged/pending/uncommited changes.',
               help: 'Please commit or stash any outstanding changes ' +
                     'before running work.'
@@ -62,9 +52,9 @@ module.exports = function(grunt) {
             'responses manually before submitting the PR');
 
 
-          if (results.currentBranch.isNotDefaultBranch) {
+          if (repoInfo.branch.notDefault) {
             grunt.log.subhead('Not on default branch! (' +
-              results.currentBranch.name + ' !== ' + git.defaultBranch + ')');
+              repoInfo.branch.name + ' !== ' + git.defaultBranch + ')');
             chain = prompt.get([{
               name: 'stay',
               description: 'Use this branch',
@@ -164,11 +154,9 @@ module.exports = function(grunt) {
           });
 
           chain.then(function() {
-            def.resolve();
+            resolve();
           });
         });
-
-        return def.promise;
       },
 
       add: function() {
@@ -176,7 +164,18 @@ module.exports = function(grunt) {
           'This will add a new task to the current PR (if you\'re on a branch ' +
           'with an open PR)'
         );
-        taskDone();
+      },
+
+      status: function(repoInfo) {
+        return new RSVP.Promise(function(resolve, reject) {
+          github.pullRequest(repoInfo.name).then(function(pullRequests) {
+            grunt.log.writeln(JSON.stringify(pullRequests));
+          });
+          // taskDone(false);
+          // setTimeout(function() {
+          //   // resolve();
+          // }, 10000);
+        });
       }
     };
 
@@ -187,14 +186,30 @@ module.exports = function(grunt) {
       return taskDone(false);
     }
 
-    github.withGitHubAuth().then(_.bind(function() {
-      return task.apply(this).then(function() {
-        taskDone();
+    RSVP.on('error', function(reason) {
+      grunt.log.error('RSVP error');
+      grunt.log.error(reason.stack);
+    });
+
+    github.withGitHubAuth().then(function() {
+      return RSVP.hash({
+        isDirty: git.isRepoDirty(),
+        branch: git.currentBranch(),
+        name: git.repoName()
+      }).then(function(repoInfo) {
+        grunt.log.ok('Got repo info');
+        return task(repoInfo).then(function() {
+          grunt.log.ok();
+          taskDone();
+        });
       });
-    }, this)).catch(function(reason) {
-      grunt.log.error(reason.reason);
+    }).catch(function(reason) {
+      grunt.verbose.warn('Failing task');
       if (!_.isUndefined(reason.help)) {
+        grunt.log.error(reason.reason);
         grunt.log.writeln(reason.help);
+      } else {
+        grunt.log.error(reason.stack);
       }
       return taskDone(false);
     });

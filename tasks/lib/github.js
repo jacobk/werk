@@ -1,3 +1,4 @@
+// https://github.com/mikedeboer/node-github
 
 'use strict';
 
@@ -6,6 +7,7 @@ exports.init = function(grunt) {
   var RSVP = require('rsvp'),
       GitHubApi = require("github"),
       moment = require('moment'),
+      _ = require('lodash'),
       config = require('./config').init(grunt),
       prompt = require('./prompt').init(grunt);
 
@@ -56,6 +58,12 @@ exports.init = function(grunt) {
     });
   };
 
+  var withGitHubConfig = function(options) {
+    return _.defaults(options, {
+      user: config.get('github_user'),
+    });
+  };
+
   var hasCredentials = function() {
     return config.get('github_token') && config.get('github_user');
   };
@@ -63,7 +71,11 @@ exports.init = function(grunt) {
   exports.withGitHubAuth = function() {
     return new RSVP.Promise(function(resolve, reject) {
       if (hasCredentials()) {
-        grunt.verbose.ok('Authenticated with GitHub as \'' +
+        github.authenticate({
+          type: 'oauth',
+          token: config.get('github_token')
+        });
+        grunt.log.ok('Authenticated with GitHub as \'' +
                           config.get('github_user') + '\'');
         resolve(true);
       } else {
@@ -77,6 +89,18 @@ exports.init = function(grunt) {
       }
     });
   };
+
+  exports.pullRequest = function(repo) {
+    return new RSVP.Promise(function(resolve, reject) {
+      var options = withGitHubConfig({
+        repo: repo,
+        state: 'open'
+      });
+      github.pullRequests.getAll(options, function() {
+        resolve(arguments);
+      });
+    });
+  }
 
   return exports;
 };

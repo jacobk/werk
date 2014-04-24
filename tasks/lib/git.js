@@ -4,6 +4,8 @@
 exports.init = function(grunt) {
 
   var RSVP = require('rsvp'),
+      path = require('path'),
+      _ = require('lodash'),
       shell = require('./shell').init(grunt);
 
   var exports = {},
@@ -28,8 +30,20 @@ exports.init = function(grunt) {
         branchName = result.stdout.trim();
         resolve({
           name: branchName,
-          isNotDefaultBranch: branchName !== defaultBranch
+          notDefault: branchName !== defaultBranch
         });
+      });
+    });
+  };
+
+  exports.repoName = function() {
+    return new RSVP.Promise(function(resolve, reject) {
+      shell.exec('git rev-parse --show-toplevel').then(function(result) {
+        if (!_.isNull(result.error)) {
+          reject('Failed to get repo name');
+        } else {
+          resolve(path.basename(result.stdout.trim()));
+        }
       });
     });
   };
