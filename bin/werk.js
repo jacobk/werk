@@ -22,6 +22,8 @@ var _ = require('lodash'),
     cmdName = argv._[0].toLowerCase(),
     cmd;
 
+logger.init();
+
 if (argv._.length === 0) {
   logger.log.warn('USAGE');
   process.exit(1);
