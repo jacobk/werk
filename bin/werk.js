@@ -36,12 +36,14 @@ try {
   process.exit(1);
 }
 
+logger.verbose.write('Gathering repo info...');
 RSVP.hash({
   isDirty: git.isRepoDirty(),
   branch: git.currentBranch(),
   name: git.repoName(),
   owner: git.repoOwner()
 }).then(function(repoInfo) {
+  logger.verbose.ok();
   logger.log.ok(cmd.shortDesc);
   return github.withGitHubAuth().then(function() {
     return cmd.run(repoInfo).then(function() {
