@@ -18,16 +18,18 @@ var _ = require('lodash'),
     git = require('../lib/git'),
     prompt = require('../lib/prompt'),
     shell = require('../lib/shell'),
+    help = require('../lib/cmds/help'),
     argv = require('minimist')(process.argv.slice(2)),
-    cmdName = argv._[0].toLowerCase(),
-    cmd;
+    cmdName, cmd;
 
 logger.init();
 
 if (argv._.length === 0) {
-  logger.log.warn('USAGE');
+  help.run();
   process.exit(1);
 }
+
+cmdName = argv._[0].toLowerCase();
 
 try {
   cmd = require('../lib/cmds/' + cmdName);
@@ -44,7 +46,7 @@ RSVP.hash({
   owner: git.repoOwner()
 }).then(function(repoInfo) {
   logger.verbose.ok();
-  logger.log.ok(cmd.shortDesc);
+  logger.log.ok('Will ' + cmd.shortDesc);
   return github.withGitHubAuth().then(function() {
     return cmd.run(repoInfo).then(function() {
       logger.log.ok();
