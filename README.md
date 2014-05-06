@@ -1,7 +1,5 @@
 ## TODO
 
-* werk new (new PR)
-* werk add (add task)
 * werk team (who short status for all open PRs)
 * werk comment (add comment to current PR)
 * werk snap (comment with screenshot)
