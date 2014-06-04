@@ -46,8 +46,8 @@ RSVP.hash({
   owner: git.repoOwner()
 }).then(function(repoInfo) {
   logger.verbose.ok();
-  logger.log.ok('Will ' + cmd.shortDesc);
   return github.withGitHubAuth().then(function() {
+    logger.log.ok('Will ' + cmd.shortDesc);
     return cmd.run(repoInfo).then(function() {
       logger.log.ok();
     });
