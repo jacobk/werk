@@ -6,6 +6,10 @@ CLI to create and manage pull requests with task lists on GitHub
 
 ![WERK](http://jacobk.github.io/werk/images/demo02.gif)
 
+## Install
+
+`npm install -g werk`
+
 ## Usage
 
 ```
