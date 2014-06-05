@@ -1,7 +1,7 @@
 {
   "name": "werk",
   "description": "CLI to create and manage pull requests with task lists on GitHub",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "homepage": "https://github.com/jacobk/werk",
   "author": {
     "name": "Jacob Kristhammar",
